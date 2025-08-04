@@ -44,11 +44,21 @@ async function main() {
   console.log(`📊 Checking ${followers.length} accounts...`);
 
   let suspectCount = 0;
+
   for (const user of followers) {
-    if (checkIfLikelyBot(user)) {
-      suspectCount++;
-      console.log(
-        `⚠️  [SUSPECTED BOT] @${user.handle} | Follows: ${user.followsCount} | Followers: ${user.followersCount}`
+    try {
+      const profileRes = await agent.getProfile({ actor: user.did });
+      const fullUser = profileRes.data;
+
+      if (checkIfLikelyBot(fullUser)) {
+        suspectCount++;
+        console.log(
+          `⚠️  [SUSPECTED BOT] @${fullUser.handle} | Follows: ${fullUser.followsCount} | Followers: ${fullUser.followersCount} | Posts: ${fullUser.postsCount}`
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `⚠️ Failed to fetch full profile for @${user.handle}: ${err.message}`
       );
     }
   }
