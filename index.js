@@ -18,6 +18,13 @@ async function main() {
   console.log("🌌 SkySweep CLI – Follower Bot Scanner for Bluesky");
 
   const identifier = await ask("🧑‍💻 Your handle (e.g. you.bsky.social): ");
+  console.log(
+    "\n🔐 Please use a *Bluesky App Password* — not your main account password."
+  );
+  console.log(
+    "👉 You can generate one here: https://bsky.app/settings (scroll down to 'App Passwords')\n"
+  );
+
   const password = await ask("🔐 Your app password: ");
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
