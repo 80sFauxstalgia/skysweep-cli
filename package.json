@@ -1,0 +1,26 @@
+{
+  "name": "skysweep",
+  "version": "1.0.0",
+  "description": "A privacy-focused CLI tool to scan your Bluesky followers and identify likely bot accounts based on follower/following ratios and activity.",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "skysweep": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "bluesky",
+    "bots",
+    "cli",
+    "moderation"
+  ],
+  "author": "Griff",
+  "license": "MIT",
+  "dependencies": {
+    "@atproto/api": "^0.10.5",
+    "chalk": "^5.5.0"
+  }
+}
