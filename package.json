@@ -1,7 +1,7 @@
 {
   "name": "skysweep",
-  "version": "1.0.0",
-  "description": "A privacy-focused CLI tool to scan your Bluesky followers and identify likely bot accounts based on follower/following ratios and activity.",
+  "version": "0.3.0",
+  "description": "A privacy-focused CLI to scan Bluesky followers and identify likely bot accounts using follower/following ratios and activity.",
   "main": "index.js",
   "type": "module",
   "bin": {
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"No tests yet\" && exit 0"
   },
   "keywords": [
     "bluesky",
@@ -19,6 +19,17 @@
   ],
   "author": "Griff",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/80sFauxstalgia/skysweep-cli.git"
+  },
+  "homepage": "https://github.com/80sFauxstalgia/skysweep-cli",
+  "bugs": {
+    "url": "https://github.com/80sFauxstalgia/skysweep-cli/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@atproto/api": "^0.10.5",
     "chalk": "^5.5.0"
