@@ -8,6 +8,7 @@ import path from "path";
 import readline from "readline";
 import { parseArgs, buildHelp } from "./utils/args.js";
 import { checkIfLikelyBot } from "./utils/botCheck.js";
+import { checkIfLikelyMarketer } from "./utils/marketerCheck.js";
 
 // ---------------- Flags / schema ----------------
 const schema = {
@@ -21,7 +22,7 @@ const schema = {
     type: "bool",
     alias: "b",
     default: false,
-    desc: "Block suspected bots automatically",
+    desc: "Block suspected accounts automatically",
   },
   delay: {
     type: "number",
@@ -71,6 +72,18 @@ const schema = {
     default: false,
     desc: "Print detailed reasoning/metrics",
   },
+  "include-marketers": {
+    type: "bool",
+    alias: "k",
+    default: false,
+    desc: "Also flag marketer-style accounts",
+  },
+  "marketer-only": {
+    type: "bool",
+    alias: "K",
+    default: false,
+    desc: "Only act on marketer-style accounts",
+  },
   help: {
     type: "bool",
     alias: "h",
@@ -91,6 +104,8 @@ if (flags.help) {
         "node index.js --auto-block --delay 500 --profile-delay 150 --max-blocks 25",
         "node index.js --simulate --pages 3 --export csv --out suspected-bots.csv",
         "node index.js --target someone.bsky.social --simulate",
+        "node index.js --simulate --include-marketers",
+        "node index.js --simulate --marketer-only",
       ],
       schema
     )
@@ -125,6 +140,7 @@ function toCSV(rows) {
     "following",
     "posts",
     "ratio",
+    "category",
     "reason",
   ];
   const lines = [headers.join(",")];
@@ -137,6 +153,7 @@ function toCSV(rows) {
         r.following,
         r.posts,
         r.ratio,
+        csvEscape(r.category ?? ""),
         csvEscape(r.reason),
       ].join(",")
     );
@@ -184,6 +201,15 @@ async function askChoice(q, choices, defIndex = 0) {
     Math.max(1, Math.min(choices.length, Number(ans) || defIndex + 1)) - 1;
   return choices[idx];
 }
+
+// graceful Ctrl+C
+process.on("SIGINT", () => {
+  console.log("\n👋 Cancelled.");
+  try {
+    rl.close();
+  } catch {}
+  process.exit(0);
+});
 
 // ---------------- Safe block wrapper ----------------
 async function safeBlock(
@@ -247,8 +273,15 @@ async function safeBlock(
   let targetOverride = (flags["target"] || "").trim();
   let exportFmt = (flags["export"] || "").toLowerCase(); // "", "json", "csv"
   let outputFile = flags["out"];
+  let includeMarketers = flags["include-marketers"];
+  let marketerOnly = flags["marketer-only"];
 
-  const noModeGiven = !simulateMode && !autoBlockMode && !exportFmt;
+  const noModeGiven =
+    !simulateMode &&
+    !autoBlockMode &&
+    !exportFmt &&
+    !includeMarketers &&
+    !marketerOnly;
   if (noModeGiven) {
     console.log(chalk.cyan("\nNo flags provided — entering friendly setup…"));
     const mode = await askChoice("Choose run mode:", [
@@ -259,8 +292,19 @@ async function safeBlock(
     if (mode.startsWith("Simulate")) simulateMode = true;
     if (mode.startsWith("Auto-block")) autoBlockMode = true;
 
+    includeMarketers = await askYesNo(
+      "Also flag marketer-style accounts?",
+      false
+    );
+    if (!includeMarketers) {
+      marketerOnly = await askYesNo(
+        "Marketer-only mode (ignore classic bots)?",
+        false
+      );
+    }
+
     const wantsExport = await askYesNo(
-      "Export suspected bots to a file?",
+      "Export suspected accounts to a file?",
       false
     );
     if (wantsExport) {
@@ -310,18 +354,20 @@ async function safeBlock(
     console.log(
       chalk.cyan(`
 Summary:
-  Mode:            ${
+  Mode:              ${
     simulateMode ? "simulate" : autoBlockMode ? "auto-block" : "review-only"
   }
-  Target:          ${targetOverride || "(self)"}
-  Pages:           ${pages}
-  Profile delay:   ${profileDelayMs} ms
-  Block delay:     ${blockDelayMs} ms
-  Max blocks:      ${isFinite(maxBlocks) ? maxBlocks : "∞"}
-  Export:          ${exportFmt || "none"} ${
+  Target:            ${targetOverride || "(self)"}
+  Pages:             ${pages}
+  Profile delay:     ${profileDelayMs} ms
+  Block delay:       ${blockDelayMs} ms
+  Max blocks:        ${isFinite(maxBlocks) ? maxBlocks : "∞"}
+  Include marketers: ${includeMarketers ? "yes" : "no"}
+  Marketer-only:     ${marketerOnly ? "yes" : "no"}
+  Export:            ${exportFmt || "none"} ${
         outputFile ? `(file: ${outputFile})` : ""
       }
-  Verbose:         ${verbose ? "yes" : "no"}
+  Verbose:           ${verbose ? "yes" : "no"}
 `)
     );
     const ok = await askYesNo("Proceed?", true);
@@ -334,18 +380,20 @@ Summary:
     console.log(
       chalk.cyan(`
 Flags this run:
-  Mode:            ${
+  Mode:              ${
     simulateMode ? "simulate" : autoBlockMode ? "auto-block" : "review-only"
   }
-  Target:          ${targetOverride || "(self)"}
-  Pages:           ${pages}
-  Profile delay:   ${profileDelayMs} ms
-  Block delay:     ${blockDelayMs} ms
-  Max blocks:      ${isFinite(maxBlocks) ? maxBlocks : "∞"}
-  Export:          ${exportFmt || "none"} ${
+  Target:            ${targetOverride || "(self)"}
+  Pages:             ${pages}
+  Profile delay:     ${profileDelayMs} ms
+  Block delay:       ${blockDelayMs} ms
+  Max blocks:        ${isFinite(maxBlocks) ? maxBlocks : "∞"}
+  Include marketers: ${includeMarketers ? "yes" : "no"}
+  Marketer-only:     ${marketerOnly ? "yes" : "no"}
+  Export:            ${exportFmt || "none"} ${
         outputFile ? `(file: ${outputFile})` : ""
       }
-  Verbose:         ${verbose ? "yes" : "no"}
+  Verbose:           ${verbose ? "yes" : "no"}
 `)
     );
   }
@@ -374,7 +422,7 @@ Flags this run:
     process.exit(1);
   }
 
-  const actor = targetOverride || identifier;
+  const actor = (flags["target"] || "").trim() || identifier;
 
   // ---------- Fetch followers with pagination ----------
   let followers = [];
@@ -412,7 +460,31 @@ Flags this run:
 
       if (profileDelayMs > 0) await sleep(profileDelayMs);
 
-      const reason = checkIfLikelyBot(fullUser);
+      // compute reasons
+      const botReason = checkIfLikelyBot(fullUser);
+      const marketerReason =
+        includeMarketers || marketerOnly
+          ? checkIfLikelyMarketer(fullUser)
+          : null;
+
+      let reason = null;
+      let category = null;
+      // marketer-only ignores bots
+      if (marketerOnly) {
+        if (marketerReason) {
+          reason = marketerReason;
+          category = "marketer";
+        }
+      } else {
+        if (botReason) {
+          reason = botReason;
+          category = "bot";
+        } else if (includeMarketers && marketerReason) {
+          reason = marketerReason;
+          category = "marketer";
+        }
+      }
+
       const ratio = (
         (fullUser.followersCount || 0) / Math.max(1, fullUser.followsCount || 1)
       ).toFixed(3);
@@ -424,7 +496,9 @@ Flags this run:
               fullUser.followsCount
             } | Followers ${fullUser.followersCount} | Posts ${
               fullUser.postsCount
-            } | Ratio ${ratio} | Match ${Boolean(reason)}`
+            } | Ratio ${ratio} | Match ${Boolean(reason)}${
+              reason ? ` (${category})` : ""
+            }`
           )
         );
       }
@@ -432,24 +506,24 @@ Flags this run:
       if (reason) {
         suspectCount++;
         exportRows.push({
-          handle: fullUser.handle,
-          did: fullUser.did,
-          followers: fullUser.followersCount ?? 0,
-          following: fullUser.followsCount ?? 0,
-          posts: fullUser.postsCount ?? 0,
+          handle: fullUser.handle ?? "",
+          did: fullUser.did ?? "",
+          followers: Number(fullUser.followersCount ?? 0),
+          following: Number(fullUser.followsCount ?? 0),
+          posts: Number(fullUser.postsCount ?? 0),
           ratio,
           reason,
+          category,
         });
 
         if (simulateMode) {
           console.log(
             chalk.yellow(
-              `👻 Would block: @${fullUser.handle} (reason: ${reason})`
+              `👻 Would block: @${fullUser.handle} (reason: ${reason}; category: ${category})`
             )
           );
         } else if (autoBlockMode) {
           if (blockCount < maxBlocks) {
-            // **FIX**: use interactive-adjusted value, not raw flags
             const ok = await safeBlock(
               agent,
               fullUser,
@@ -469,7 +543,9 @@ Flags this run:
         } else {
           console.log(
             chalk.magenta(
-              `⚠️  [SUSPECTED BOT] @${fullUser.handle} (reason: ${reason})`
+              `⚠️  [SUSPECTED ${category?.toUpperCase() ?? "BOT"}] @${
+                fullUser.handle
+              } (reason: ${reason})`
             )
           );
         }
@@ -499,7 +575,7 @@ Flags this run:
       fs.writeFileSync(path.resolve(name), data, "utf8");
       console.log(
         chalk.cyan(
-          `\n💾 Exported ${exportRows.length} suspected bot(s) to ${name}`
+          `\n💾 Exported ${exportRows.length} suspected account(s) to ${name}`
         )
       );
     } catch (e) {
