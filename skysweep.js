@@ -166,7 +166,7 @@ function safeFilename(name) {
 
 function csvEscape(s) {
   const str = String(s ?? "");
-  return /[\",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
 function toCSV(rows) {
@@ -338,7 +338,10 @@ async function safeBlock(
   }
 }
 
-const BOT_SCORE_THRESHOLD = 35;\nconst MARKETER_SCORE_THRESHOLD = 30;\n\n// ---------------- Download all media ----------------
+const BOT_SCORE_THRESHOLD = 35;
+const MARKETER_SCORE_THRESHOLD = 30;
+
+// ---------------- Download all media ----------------
 async function downloadAllMedia(agent, actor, downloadPath) {
   console.log(chalk.cyan(`\n💾 Starting media download for @${actor}...`));
   if (!fs.existsSync(downloadPath)) {
@@ -547,7 +550,114 @@ async function runFollowerScan(agent, actor, settings) {
   );
 }
 
-// ---------------- Nuke Logic ----------------\n\nasync function fetchAllRecords(agent, repo, collection) {\n  const records = [];\n  let cursor;\n  while (true) {\n    try {\n      const res = await agent.com.atproto.repo.listRecords({\n        repo,\n        collection,\n        limit: 100,\n        cursor,\n      });\n      if (res.data.records.length === 0) break;\n      records.push(...res.data.records);\n      cursor = res.data.cursor;\n      if (!cursor) break;\n    } catch (err) {\n      console.error(chalk.red(`❌ Could not fetch records: ${err.message}`));\n      return []; // Return empty on error\n    }\n  }\n  return records;\n}\n\nasync function runNuke(agent, actor, settings) {\n  const nukeType = settings.nuke;\n  if (!nukeType) return;\n\n  const typeMap = {\n    \"all-posts\": \"ALL POSTS\",\n    \"media-posts\": \"ALL MEDIA POSTS\",\n    \"text-posts\": \"ALL TEXT-ONLY POSTS\",\n    likes: \"ALL LIKES\",\n  };\n\n  const readableType = typeMap[nukeType];\n  if (!readableType) {\n    console.error(chalk.red(`❌ Invalid nuke type: ${nukeType}`));\n    return;\n  }\n\n  console.log(chalk.red.bold("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"));\n  console.log(chalk.red.bold("                      DANGER: NUKE MODE"));\n  console.log(chalk.red.bold("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"));\n  console.log(chalk.yellow(`\nThis will permanently delete ${readableType} from your account.`));\n  console.log(chalk.yellow(\"This action is irreversible. There is no undo.\"));\n\n  const confirm = await ask(`\n👉 To confirm, type exactly \"${nukeType}\" and press Enter: `);\n\n  if (confirm !== nukeType) {\n    console.log(chalk.cyan("\n🛑 Nuke cancelled. No action taken."));\n    return;\n  }\n\n  console.log(chalk.cyan(`\n✅ Confirmation received. Preparing to nuke ${readableType}...`));\n\n  const repo = agent.session.did; // The repo to modify is our own\n  let records = [];\n  let collection = \"\";\n  let filterFn = () => true;\n\n  if (nukeType === \"likes\") {\n    collection = \"app.bsky.feed.like\";\n  } else if ([\"all-posts\", \"media-posts\", \"text-posts\"].includes(nukeType)) {\n    collection = \"app.bsky.feed.post\";\n    if (nukeType === \"media-posts\") {\n      filterFn = (r) => !!r.value.embed?.images;\n    } else if (nukeType === \"text-posts\") {\n      filterFn = (r) => !r.value.embed?.images;\n    }\n  }\n\n  console.log(chalk.cyan(`\nFetching all records...`));\n  records = await fetchAllRecords(agent, repo, collection);\n\n  const toDelete = records.filter(filterFn);\n\n  if (toDelete.length === 0) {\n    console.log(chalk.green("\n✅ No records to delete."));\n    return;\n  }\n\n  console.log(chalk.yellow(`\nFound ${toDelete.length} item(s) to delete.`));\n\n  let deletedCount = 0;\n  const delay = settings.delay ?? 200; // Use a safe delay\n\n  for (const record of toDelete) {\n    try {\n      await agent.com.atproto.repo.deleteRecord({\n        repo,\n        collection,\n        rkey: record.uri.split(\"/").pop(),\n      });\n      deletedCount++;\n      console.log(`  (${deletedCount}/${toDelete.length}) Deleted ${record.uri}`);\n      await sleep(delay);\n    } catch (err) {\n      console.error(chalk.red(`❌ Error deleting ${record.uri}: ${err.message}`));\n      // Continue to next record\n    }\n  }\n\n  console.log(chalk.green(`\n✅ Nuke complete. Deleted ${deletedCount} item(s).`));\n}\n\n// ---------------- Configuration Logic ----------------
+// ---------------- Nuke Logic ----------------
+
+async function fetchAllRecords(agent, repo, collection) {
+  const records = [];
+  let cursor;
+  while (true) {
+    try {
+      const res = await agent.com.atproto.repo.listRecords({
+        repo,
+        collection,
+        limit: 100,
+        cursor,
+      });
+      if (res.data.records.length === 0) break;
+      records.push(...res.data.records);
+      cursor = res.data.cursor;
+      if (!cursor) break;
+    } catch (err) {
+      console.error(chalk.red(`❌ Could not fetch records: ${err.message}`));
+      return []; // Return empty on error
+    }
+  }
+  return records;
+}
+
+async function runNuke(agent, actor, settings) {
+  const nukeType = settings.nuke;
+  if (!nukeType) return;
+
+  const typeMap = {
+    "all-posts": "ALL POSTS",
+    "media-posts": "ALL MEDIA POSTS",
+    "text-posts": "ALL TEXT-ONLY POSTS",
+    likes: "ALL LIKES",
+  };
+
+  const readableType = typeMap[nukeType];
+  if (!readableType) {
+    console.error(chalk.red(`❌ Invalid nuke type: ${nukeType}`));
+    return;
+  }
+
+  console.log(chalk.red.bold("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"));
+  console.log(chalk.red.bold("                      DANGER: NUKE MODE"));
+  console.log(chalk.red.bold("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"));
+  console.log(chalk.yellow(`\nThis will permanently delete ${readableType} from your account.`));
+  console.log(chalk.yellow("This action is irreversible. There is no undo."));
+
+  const confirm = await ask(`\n👉 To confirm, type exactly \"${nukeType}\" and press Enter: `);
+
+  if (confirm !== nukeType) {
+    console.log(chalk.cyan("\n🛑 Nuke cancelled. No action taken."));
+    return;
+  }
+
+  console.log(chalk.cyan(`\n✅ Confirmation received. Preparing to nuke ${readableType}...`));
+
+  const repo = agent.session.did; // The repo to modify is our own
+  let records = [];
+  let collection = "";
+  let filterFn = () => true;
+
+  if (nukeType === "likes") {
+    collection = "app.bsky.feed.like";
+  } else if (["all-posts", "media-posts", "text-posts"].includes(nukeType)) {
+    collection = "app.bsky.feed.post";
+    if (nukeType === "media-posts") {
+      filterFn = (r) => !!r.value.embed?.images;
+    } else if (nukeType === "text-posts") {
+      filterFn = (r) => !r.value.embed?.images;
+    }
+  }
+
+  console.log(chalk.cyan(`\nFetching all records...`));
+  records = await fetchAllRecords(agent, repo, collection);
+
+  const toDelete = records.filter(filterFn);
+
+  if (toDelete.length === 0) {
+    console.log(chalk.green("\n✅ No records to delete."));
+    return;
+  }
+
+  console.log(chalk.yellow(`\nFound ${toDelete.length} item(s) to delete.`));
+
+  let deletedCount = 0;
+  const delay = settings.delay ?? 200; // Use a safe delay
+
+  for (const record of toDelete) {
+    try {
+      await agent.com.atproto.repo.deleteRecord({
+        repo,
+        collection,
+        rkey: record.uri.split("/").pop(),
+      });
+      deletedCount++;
+      console.log(`  (${deletedCount}/${toDelete.length}) Deleted ${record.uri}`);
+      await sleep(delay);
+    } catch (err) {
+      console.error(chalk.red(`❌ Error deleting ${record.uri}: ${err.message}`));
+      // Continue to next record
+    }
+  }
+
+  console.log(chalk.green(`\n✅ Nuke complete. Deleted ${deletedCount} item(s).`));
+}
+
+// ---------------- Configuration Logic ----------------
 async function runConfiguration(settings) {
   console.log(chalk.cyan("\n⚙️  Entering advanced configuration..."));
 
