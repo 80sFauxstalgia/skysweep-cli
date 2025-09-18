@@ -1,98 +1,53 @@
 # 🌌 SkySweep Project Roadmap
 
-**SkySweep** is an open-source, privacy-first tool for detecting and blocking bot accounts on Bluesky. It includes both a command-line tool for developers and a user-friendly web dashboard for creators and casual users.
+**SkySweep** is evolving from a bot scanner into a comprehensive, privacy-first toolkit for Bluesky power users. Our goal is to provide useful, easy-to-access tools for account management, starting with a command-line interface and paving the way for future web and mobile applications.
 
 ---
 
 ## 🎯 Vision
 
-Empower Bluesky users to reclaim their timelines by identifying and blocking mass-follow bots using smart heuristics and community-shared lists—without compromising privacy.
+To empower Bluesky users with a suite of powerful, intuitive, and privacy-respecting tools to manage their content, curate their community, and understand their social graph.
 
 ---
 
-## 🚧 Phase 1: MVP (Minimum Viable Product)
+## 🚧 Phase 1: Core CLI Refinement & Feature Expansion (In Progress)
 
-### 🛠 SkySweep CLI (Developer Tool)
+This phase focuses on making the CLI a robust and user-friendly foundation for all future development.
 
-- ✅ Authenticate with Bluesky App Password
-- ✅ Fetch recent followers (up to 100)
-- ✅ Run basic suspicion heuristics:
-  - Follows > 100
-  - Followers < 25
-  - Posts < 5
-  - Follower/Following Ratio < 0.05
-- ✅ Print suspect bots to terminal
-- [ ] Add `--export` and `--simulate` flags
-- [ ] Add optional `--auto-block` feature
-
-### 🌐 SkySweep Cloud (Web App)
-
-- [ ] Simple login form (handle + app password)
-- [ ] Fetch and scan followers via backend
-- [ ] Display suspected bot accounts
-- [ ] "Block All" and "Export List" buttons (UI only for now)
+- [x] **UX Overhaul:** Refactor the CLI to be goal-oriented with a simple main menu instead of a long questionnaire.
+- [x] **Rename `index.js` to `skysweep.js`** for better project clarity.
+- [x] **Feature: Media Backup:** Implement functionality to download all user-posted media to a local directory (`--download-media`).
+- [x] **Feature: Content Nuke:** Implement functionality to bulk-delete content with fine-grained controls:
+  - [x] Nuke all posts.
+  - [x] Nuke only posts with media.
+  - [x] Nuke only text posts.
+  - [x] Nuke all likes.
+- [x] **Bot/Marketer Scanning:** Retain the original scanning functionality as a core feature accessible from the main menu.
 
 ---
 
-## 🔁 Phase 2: Core Feature Enhancements
+## 📦 Phase 2: Packaging & Distribution
 
-### CLI
+This phase is about making the tool accessible to non-technical users.
 
-- [ ] Export results to `.json` or `.csv`
-- [ ] Configurable scan mode: `--mode safe | moderate | aggressive`
-- [ ] Read credentials from `config.json` or `.env`
-- [ ] Display summary statistics
-
-### Cloud
-
-- [ ] Working "Block All" backend endpoint
-- [ ] Export suspected bot list to download
-- [ ] Individual review toggle (checkboxes per bot)
-- [ ] Mobile-friendly responsive layout
-- [ ] Help/FAQ panel and donation link
+- [ ] **Standalone Executables:** Integrate `pkg` to bundle the application into single executables for Windows, macOS, and Linux.
+- [ ] **Address False Positives:** Develop clear documentation and release notes to guide users through potential virus scanner warnings.
 
 ---
 
-## 💸 Phase 3: Donationware & Community Layer
+## 🖥️ Phase 3: UI Development (Web & Mobile)
 
-- [ ] Ko-fi or GitHub Sponsors support
-- [ ] "Support Development" button on dashboard
-- [ ] Public transparency dashboard: Total bots blocked, users helped
-- [ ] Community testimonials
+This phase will bring the power of the CLI to a graphical interface.
 
----
-
-## 🌈 Stretch Goals (v1.0+)
-
-- [ ] Schedule recurring scans via web
-- [ ] Email or DMs when new bots are detected
-- [ ] Public blocklist API
-- [ ] Federated server support
-- [ ] Custom detection filters (e.g. keyword blocks)
-- [ ] Shared reputation weight system (trustworthy user reports)
+- [ ] **Web Dashboard:** Design and build a web application that exposes the core features (scanning, backup, content deletion) through a user-friendly interface.
+- [ ] **iOS Application:** Scope and develop a companion iOS app for on-the-go account management.
 
 ---
 
-## 🧭 Development Timeline (Proposed)
+## ✨ Future Ideas (The "Suite" Vision)
 
-| Week | Focus                           | Milestone                    |
-| ---- | ------------------------------- | ---------------------------- |
-| 1    | CLI MVP                         | Public GitHub release        |
-| 2    | Cloud MVP scaffold              | Deploy to Vercel, test login |
-| 3    | Add CLI blocking + export       | Community testing            |
-| 4    | Cloud "Block All" + Export      | Accept donations             |
-| 5+   | UI polish + Feedback-driven dev | Iterate + community support  |
+These are longer-term goals to consider after the core phases are complete.
 
----
-
-## 💬 Want to Contribute?
-
-1. Star and fork the repo
-2. Open a PR or issue for improvements or feature requests
-3. Join the project via [GitHub Discussions](https://github.com/YOUR_USERNAME/skysweep-cli/discussions) _(if enabled)_
-
----
-
-## 🧡 Maintainer
-
-Built with love and frustration by [@griffin.bsky.social](https://bsky.app/profile/griffin.bsky.social). Say hi or report bugs there.
+- [ ] **Advanced Follower Curation:** A dashboard to see who doesn't follow you back, manage allow-lists, etc.
+- [ ] **Post Scheduling:** A common power-user request.
+- [ ] **Account Analytics:** Insights into account growth and engagement.
