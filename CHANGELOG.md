@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.7.0] - 2025-09-22
+
+### ✨ Added
+
+- **Video Downloads:** The media backup feature now correctly detects and downloads video files in addition to images.
+- **Media Type Filtering:** Added a `--media-type` flag and an interactive menu option to allow users to download `all`, `photos`, or `videos` only.
+
+### ♻️ Changed
+
+- **Improved UX:** Replaced the simple yes/no prompt for content tag filtering with a more user-friendly interactive menu that includes presets for common NSFW tags (`suggestive`, `nudity`, `graphic-media`).
+
+### 🐛 Fixed
+
+- **Exclude Reposts:** The media backup feature now correctly ignores reposts, only downloading media from the user's original posts.
+
+
+## [0.6.0] - 2025-09-20
+
+### ✨ Added
+
+- **Advanced Media Filtering:** Added functionality to filter media for backup or nuke operations based on content tags. New flags `--filter-tags` and `--untagged-only` are available.
+- **Interactive Filtering:** The interactive menus for Media Backup and a new Nuke Content option now guide users through setting up content tag filters.
+- **Unit Tests:** Introduced a Jest testing suite to validate core logic and prevent regressions.
+
+### ♻️ Changed
+
+- **Download Performance:** Significantly improved media backup speed by downloading images in parallel.
+- **Improved UX:** The media backup feature now suggests a user-friendly default download location.
+- **Heuristic Tuning:** Adjusted bot detection heuristics to be more sensitive to moderately suspicious accounts.
+
+### 🐛 Fixed
+
+- **Label Detection:** Fixed a critical bug where moderation-applied content labels were not being detected. The tool now correctly finds both self-applied and moderation tags.
+- **Heuristic Accuracy:** Fixed a bug in the marketer detection logic where unicode emojis were being counted incorrectly.
+- **Test Environment:** Corrected the Jest configuration to properly handle ES Modules.
+
+---
+
 ## [0.5.0] - 2025-09-17
 
 ### ✨ Added

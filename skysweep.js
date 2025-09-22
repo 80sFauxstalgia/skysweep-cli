@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-import pkg from "@atproto/api";
-const { BskyAgent } = pkg;
 import chalk from "chalk";
 import fs from "fs";
+import os from "os";
 import path from "path";
-import readline from "readline";
+import { ask, rl } from "./utils/readline.js";
 import { parseArgs, buildHelp } from "./utils/args.js";
 import { checkIfLikelyBot } from "./utils/botCheck.js";
 import { checkIfLikelyMarketer } from "./utils/marketerCheck.js";
+import { login } from "./utils/auth.js";
 
 // ---------------- Flags / schema ----------------
 const schema = {
@@ -95,6 +95,21 @@ const schema = {
     alias: "x",
     default: "",
     desc: "Download all media to this path",
+  },
+  "filter-tags": {
+    type: "string",
+    default: "",
+    desc: "Only act on posts with these comma-separated tags",
+  },
+  "untagged-only": {
+    type: "bool",
+    default: false,
+    desc: "Only act on posts with no content tags",
+  },
+  "media-type": {
+    type: "string",
+    default: "all",
+    desc: "Type of media to download: all | photos | videos",
   },
   nuke: {
     type: "string",
@@ -198,26 +213,7 @@ function toCSV(rows) {
   return lines.join("\n");
 }
 
-// readline + prompts (with hidden input)
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
-const ask = (q) => new Promise((resolve) => rl.question(q, resolve));
-async function askHidden(prompt) {
-  return new Promise((resolve) => {
-    const _write = rl._writeToOutput;
-    rl._writeToOutput = (str) => {
-      if (str.includes("\n")) _write.call(rl, str);
-      else _write.call(rl, "*");
-    };
-    rl.question(prompt, (answer) => {
-      rl._writeToOutput = _write;
-      rl.output.write("\n");
-      resolve(answer);
-    });
-  });
-}
+
 async function askYesNo(q, def = true) {
   const hint = def ? "[Y/n]" : "[y/N]";
   const ans = (await ask(`${q} ${hint} `)).trim().toLowerCase();
@@ -244,51 +240,7 @@ async function askChoice(q, choices, defIndex = 0) {
   }
 }
 
-// graceful Ctrl+C
-process.on("SIGINT", () => {
-  console.log("\n👋 Cancelled.");
-  try {
-    rl.close();
-  } catch {}
-  process.exit(0);
-});
 
-// ---------------- Auth ----------------
-async function login(config) {
-  let identifier = 
-    config.identifier ||
-    (await ask("🧑‍💻 Your handle (e.g., 'yourname' or 'user.custom.com'): ")).trim();
-
-  // If the user just enters a handle without a domain, append .bsky.social
-  if (identifier && !identifier.includes('.')) {
-    identifier += '.bsky.social';
-    console.log(chalk.gray(`(Assuming full handle: ${identifier})`));
-  }
-
-  if (!config.password) {
-    console.log(
-      "\n🔐 Please use a *Bluesky App Password* — not your main account password."
-    );
-    console.log(
-      "👉 Generate one: https://bsky.app/settings (scroll to 'App Passwords')\n"
-    );
-  }
-  const password = 
-    config.password || (await askHidden("🔐 Your app password: "));
-
-  const agent = new BskyAgent({ service: "https://bsky.social" });
-  try {
-    await agent.login({ identifier, password });
-    console.log(chalk.green("✅ Logged in successfully!"));
-    config.identifier = identifier; // Store for saving
-    return agent;
-  } catch (err) {
-    console.error(
-      chalk.red("❌ Login failed. Check your handle or app password.")
-    );
-    return null;
-  }
-}
 
 // ---------------- Safe block wrapper ----------------
 async function safeBlock(
@@ -342,7 +294,8 @@ const BOT_SCORE_THRESHOLD = 35;
 const MARKETER_SCORE_THRESHOLD = 30;
 
 // ---------------- Download all media ----------------
-async function downloadAllMedia(agent, actor, downloadPath) {
+  async function downloadAllMedia(agent, actor, settings) {
+  const { "download-media": downloadPath, filterTags, untaggedOnly, "media-type": mediaType } = settings;
   console.log(chalk.cyan(`\n💾 Starting media download for @${actor}...`));
   if (!fs.existsSync(downloadPath)) {
     fs.mkdirSync(downloadPath, { recursive: true });
@@ -352,7 +305,6 @@ async function downloadAllMedia(agent, actor, downloadPath) {
   let allPosts = [];
   let cursor;
   let pageCount = 0;
-  let mediaCount = 0;
 
   while (true) {
     try {
@@ -371,38 +323,128 @@ async function downloadAllMedia(agent, actor, downloadPath) {
     }
   }
 
-  console.log(chalk.cyan(`\nFound ${allPosts.length} posts. Checking for media...`));
+  console.log(chalk.cyan(`\nFound ${allPosts.length} total posts.`));
 
-  for (const post of allPosts) {
-    const images = post.post.embed?.images;
-    if (images && Array.isArray(images)) {
-      const postRkey = post.post.uri.split("/").pop();
-      for (let i = 0; i < images.length; i++) {
-        const image = images[i];
-        const imageUrl = image.fullsize;
-        const mimeType = image.mimeType;
-        const extension = mimeType.split("/")[1] || "jpg";
-        const filename = `${postRkey}_${i}.${extension}`;
-        const filepath = path.join(downloadPath, filename);
+  // Filter out reposts
+  allPosts = allPosts.filter(p => !p.reason);
 
-        try {
-          console.log(chalk.gray(`  Downloading ${filename}...`));
-          const imageRes = await fetch(imageUrl);
-          if (!imageRes.ok) {
-            console.warn(chalk.yellow(`  ⚠️ Failed to download ${filename}: ${imageRes.statusText}`));
-            continue;
-          }
-          const buffer = Buffer.from(await imageRes.arrayBuffer());
-          fs.writeFileSync(filepath, buffer);
-          mediaCount++;
-        } catch (err) {
-          console.warn(chalk.yellow(`  ⚠️ Error saving ${filename}: ${err.message}`));
-        }
+  // Filter posts based on tags
+  const activeFilter = filterTags || untaggedOnly;
+  const filteredPosts = activeFilter ? allPosts.filter(feedViewPost => {
+    const postView = feedViewPost.post;
+    const allLabels = new Set();
+
+    const moderationLabels = postView.labels || [];
+    if (Array.isArray(moderationLabels)) {
+      for (const label of moderationLabels) allLabels.add(label.val);
+    }
+
+    const selfLabelValues = postView.record?.labels?.values || [];
+    if (Array.isArray(selfLabelValues)) {
+      for (const label of selfLabelValues) allLabels.add(label.val);
+    }
+
+    if (untaggedOnly) {
+      return allLabels.size === 0;
+    }
+    if (filterTags) {
+      const filterTagSet = new Set(filterTags.split(",").map(t => t.trim()));
+      for (const label of allLabels) {
+        if (filterTagSet.has(label)) return true;
       }
+      return false;
+    }
+    return true;
+  }) : allPosts;
+
+  if (activeFilter) {
+    console.log(chalk.cyan(`Filtered down to ${filteredPosts.length} posts based on your criteria.`));
+  }
+  
+  // --- Build Download Queue ---
+  const downloadQueue = [];
+  for (const post of filteredPosts) {
+    const p = post.post; // postView
+    if (!p.embed) continue; // Skip posts without embeds
+
+    const postRkey = p.uri.split("/").pop();
+
+    // Handle photos
+    if (mediaType === 'all' || mediaType === 'photos') {
+        const mediaInEmbed = p.embed?.images || (p.embed?.media?.images) || [];
+        for (let i = 0; i < mediaInEmbed.length; i++) {
+            const image = mediaInEmbed[i];
+            const imageUrl = image.fullsize;
+            const mimeType = image.mimeType;
+            let extension = "jpg";
+            if (mimeType && mimeType.includes("/")) {
+                extension = mimeType.split("/")[1];
+            }
+            const filename = `${postRkey}_${i}.${extension}`;
+            const filepath = path.join(downloadPath, filename);
+            downloadQueue.push({ imageUrl, filepath, filename });
+        }
+    }
+
+    // Handle videos
+    if (mediaType === 'all' || mediaType === 'videos') {
+        if (p.embed?.$type === 'app.bsky.embed.video#view') {
+            const did = p.author.did;
+            const cid = p.embed.cid;
+            const videoUrl = `${agent.service.origin}/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${cid}`;
+            const extension = 'mp4'; // Assume mp4 for now
+            const filename = `${postRkey}_video.${extension}`;
+            const filepath = path.join(downloadPath, filename);
+            downloadQueue.push({ imageUrl: videoUrl, filepath, filename });
+        }
     }
   }
 
-  console.log(chalk.green(`\n✅ Download complete! Saved ${mediaCount} media file(s) to ${downloadPath}.`));
+  if (downloadQueue.length === 0) {
+    console.log(chalk.green("\n✅ No media found to download."));
+    return;
+  }
+
+  console.log(chalk.cyan(`\nFound ${downloadQueue.length} media file(s). Starting parallel download...`));
+
+  // --- Process Download Queue ---
+  const concurrency = 10;
+  let successCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < downloadQueue.length; i += concurrency) {
+    const chunk = downloadQueue.slice(i, i + concurrency);
+    const promises = chunk.map(async (task) => {
+      try {
+        const res = await fetch(task.imageUrl);
+        if (!res.ok) {
+          throw new Error(`Failed to download: ${res.statusText}`);
+        }
+        const buffer = Buffer.from(await res.arrayBuffer());
+        fs.writeFileSync(task.filepath, buffer);
+        return { status: 'fulfilled', filename: task.filename };
+      } catch (err) {
+        return { status: 'rejected', filename: task.filename, reason: err.message };
+      }
+    });
+
+    const results = await Promise.all(promises);
+
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        successCount++;
+      } else {
+        failCount++;
+        console.warn(chalk.yellow(`  ⚠️ Failed to save ${result.filename}: ${result.reason}`));
+      }
+    }
+    console.log(chalk.gray(`  Progress: ${successCount + failCount} / ${downloadQueue.length} (success: ${successCount}, failed: ${failCount})`));
+  }
+
+  console.log(chalk.green(`\n✅ Download complete! Saved ${successCount} media file(s) to ${downloadPath}.`));
+  if (failCount > 0) {
+    console.log(chalk.yellow(`  (${failCount} file(s) failed to download.)`));
+  }
 }
 
 // ---------------- Follower Scan Logic ----------------
@@ -616,11 +658,45 @@ async function runNuke(agent, actor, settings) {
     collection = "app.bsky.feed.like";
   } else if (["all-posts", "media-posts", "text-posts"].includes(nukeType)) {
     collection = "app.bsky.feed.post";
-    if (nukeType === "media-posts") {
-      filterFn = (r) => !!r.value.embed?.images;
-    } else if (nukeType === "text-posts") {
-      filterFn = (r) => !r.value.embed?.images;
-    }
+    
+    const baseFilter = (r) => {
+        if (nukeType === "media-posts") return !!r.value.embed?.images;
+        if (nukeType === "text-posts") return !r.value.embed?.images;
+        return true;
+    };
+
+    const tagFilter = (r) => {
+        const { filterTags, untaggedOnly } = settings;
+        if (!filterTags && !untaggedOnly) return true; // No tag filter applied
+
+        const postView = { record: r.value, labels: r.value.labels }; // Adapt record to look like a postView
+        const allLabels = new Set();
+
+        const moderationLabels = postView.labels || [];
+        if (Array.isArray(moderationLabels)) {
+          for (const label of moderationLabels) allLabels.add(label.val);
+        }
+
+        const selfLabelValues = postView.record?.labels?.values || [];
+        if (Array.isArray(selfLabelValues)) {
+          for (const label of selfLabelValues) allLabels.add(label.val);
+        }
+
+        if (untaggedOnly) {
+          return allLabels.size === 0;
+        }
+
+        if (filterTags) {
+          const filterTagSet = new Set(filterTags.split(",").map(t => t.trim()));
+          for (const label of allLabels) {
+            if (filterTagSet.has(label)) return true;
+          }
+          return false;
+        }
+        return true;
+    };
+
+    filterFn = (r) => baseFilter(r) && tagFilter(r);
   }
 
   console.log(chalk.cyan(`\nFetching all records...`));
@@ -696,6 +772,16 @@ async function runConfiguration(settings) {
 
   newSettings.verbose = await askYesNo("\nVerbose output (show reasons and ratios)?", false);
 
+  const wantsMediaFilter = await askYesNo("\nFilter media backups/nukes by content tags?", false);
+  if (wantsMediaFilter) {
+    const untaggedOnly = await askYesNo("Only act on media with NO tags?", false);
+    if (untaggedOnly) {
+      newSettings.untaggedOnly = true;
+    } else {
+      newSettings.filterTags = (await ask("\nEnter comma-separated tags to filter for (e.g. nudity, suggestive): ")).trim();
+    }
+  }
+
   const wantsTarget = await askYesNo("\nScan a different account’s followers (not yourself)?", false);
   if (wantsTarget) {
     newSettings.target = (await ask("Target handle (e.g. 'user.custom.com'): ")).trim();
@@ -732,7 +818,7 @@ async function runConfiguration(settings) {
     const actor = config.target || agent.session.did;
 
     if (config["download-media"]) {
-      await downloadAllMedia(agent, actor, config["download-media"]);
+      await downloadAllMedia(agent, actor, config);
     } else if (config.nuke) {
       await runNuke(agent, actor, config);
     } else {
@@ -758,6 +844,7 @@ async function runConfiguration(settings) {
   const choice = await askChoice("\nWhat would you like to do?", [
     "🕵️  Scan followers for bots (Safe simulation)",
     "💾  Back up all my media",
+    "💥 Nuke content",
     "⚙️  Configure advanced settings",
     "🚪  Exit",
   ]);
@@ -772,14 +859,73 @@ async function runConfiguration(settings) {
   if (!agent) return;
   const actor = config.target || agent.session.did;
 
+  // Helper function for asking about media filters
+  async function askForMediaFilters() {
+    const filters = {};
+    const filterChoice = await askChoice("\nFilter by content tags?", [
+        "No filter",
+        "Only media with NO tags",
+        "Suggestive",
+        "Nudity",
+        "Graphic Media",
+        "Enter custom tags",
+    ], 0);
+
+    switch (filterChoice) {
+        case "Only media with NO tags":
+            filters.untaggedOnly = true;
+            break;
+        case "Suggestive":
+            filters.filterTags = "suggestive";
+            break;
+        case "Nudity":
+            filters.filterTags = "nudity";
+            break;
+        case "Graphic Media":
+            filters.filterTags = "graphic-media";
+            break;
+        case "Enter custom tags":
+            filters.filterTags = (await ask("\nEnter comma-separated tags to filter for: ")).trim();
+            break;
+    }
+    return filters;
+  }
+
   if (choice.startsWith("🕵️")) {
     // Run scan with safe, default settings
     await runFollowerScan(agent, actor, { ...config, simulate: true, pages: 0 });
   } else if (choice.startsWith("💾")) {
-    const downloadPath = await ask("Enter the path to save your media: ");
+    const mediaFilters = await askForMediaFilters();
+    const mediaTypeChoice = await askChoice("\nWhat type of media do you want to back up?", [
+      "All media",
+      "Photos only",
+      "Videos only",
+    ], 0);
+
+    const mediaTypeMap = {
+      "All media": "all",
+      "Photos only": "photos",
+      "Videos only": "videos",
+    };
+    const mediaType = mediaTypeMap[mediaTypeChoice];
+
+    const defaultPath = path.join(os.homedir(), "Documents", "SkySweep_Backups");
+    console.log(chalk.cyan(`\nMedia will be saved to: ${defaultPath}`))
+    const downloadPathInput = await ask("Press Enter to confirm, or enter a different path: ");
+    const downloadPath = downloadPathInput.trim() || defaultPath;
+
     if (downloadPath) {
-      await downloadAllMedia(agent, actor, downloadPath);
+      await downloadAllMedia(agent, actor, { ...config, ...mediaFilters, "media-type": mediaType, "download-media": downloadPath });
     }
+  } else if (choice.startsWith("💥")) {
+    const nukeType = await askChoice("\nWhat type of content do you want to nuke?", [
+      "all-posts",
+      "media-posts",
+      "text-posts",
+      "likes",
+    ]);
+    const mediaFilters = (nukeType.includes("post")) ? await askForMediaFilters() : {};
+    await runNuke(agent, actor, { ...config, ...mediaFilters, nuke: nukeType });
   } else if (choice.startsWith("⚙️")) {
     const newConfig = await runConfiguration(config);
     const save = await askYesNo("\n💾 Save these settings to config.json for next time?", true);
@@ -792,6 +938,8 @@ async function runConfiguration(settings) {
   }
 })().finally(() => {
   try {
-    rl.close();
+    if (rl) {
+      rl.close();
+    }
   } catch {}
 });

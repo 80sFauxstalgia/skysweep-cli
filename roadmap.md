@@ -51,3 +51,10 @@ These are longer-term goals to consider after the core phases are complete.
 - [ ] **Advanced Follower Curation:** A dashboard to see who doesn't follow you back, manage allow-lists, etc.
 - [ ] **Post Scheduling:** A common power-user request.
 - [ ] **Account Analytics:** Insights into account growth and engagement.
+
+### CLI Enhancements
+- [x] **Smarter Media Backup:** Suggest a default download location (e.g., `~/Documents/SkySweep_Backups`) to simplify media backups for non-technical users.
+- [x] **Efficient Backups:** Drastically improve media backup speed by using parallel downloads.
+- [x] **Selective Media Operations:** Allow users to back up or delete media based on Bluesky's content moderation tags (e.g., `nudity`, `suggestive`) or for posts with no tags.
+- [x] **Filter Reposts in Media Backup:** Ensure media backup only downloads original posts or posts directly created by the user, excluding reposts of others' content.
+- [x] **Video Download Support:** Add functionality to download video files from posts, with options to filter by video content.

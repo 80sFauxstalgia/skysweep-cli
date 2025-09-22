@@ -15,7 +15,7 @@ export function checkIfLikelyBot(user) {
   if (follows > 4000 && ratio < 0.01) {
     score += 50;
     reasons.push(`Extreme mass-follow pattern (ratio: ${ratio.toFixed(3)})`);
-  } else if (follows > 2500 && ratio < 0.1) {
+  } else if (follows > 1200 && ratio < 0.15) {
     score += 30;
     reasons.push(`Mass-follow pattern (ratio: ${ratio.toFixed(3)})`);
   }

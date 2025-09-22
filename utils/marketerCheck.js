@@ -36,7 +36,7 @@ export function checkIfLikelyMarketer(user) {
 
   // 4. Emoji Spam (Weak signal)
   // Using lots of "business" emojis in their name/bio.
-  const emojiSpam = /[🚀📈💰💸🔥🎯✨✔️☑️✅]/g;
+  const emojiSpam = /[🚀📈💰💸🔥🎯✨✔️☑️✅]/gu;
   const emojiMatches = text.match(emojiSpam) || [];
   if (emojiMatches.length >= 3) {
     score += 10;
